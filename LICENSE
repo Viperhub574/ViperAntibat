@@ -1,201 +1,1028 @@
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+repeat task.wait() until game:IsLoaded()
 
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 
-   1. Definitions.
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local env = (type(getgenv) == "function" and getgenv()) or _G
 
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
+pcall(function()
+	for _, n in ipairs({"ViperXNebulaAntiBatUI"}) do
+		local old = PlayerGui:FindFirstChild(n)
+		if old then old:Destroy() end
+		local oldCore = game:GetService("CoreGui"):FindFirstChild(n)
+		if oldCore then oldCore:Destroy() end
+	end
+end)
+pcall(function()
+	local prev = env.__VIPER_NEBULA_ANTIBAT_RUNTIME
+	if type(prev) == "table" and type(prev.destroy) == "function" then prev.destroy() end
+end)
 
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
+local runtime = { alive = true }
+env.__VIPER_NEBULA_ANTIBAT_RUNTIME = runtime
+local conns = {}
+local function track(c)
+	table.insert(conns, c)
+	return c
+end
 
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
+local INF_JUMP_SPEED = 50
+local SLIDER_MIN, SLIDER_MAX = 50, 150
 
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
+local state = {
+	AntiBat = false,
+	InfJump = false,
+	Scale = 100,
+	Opacity = 40,
+}
+local antiTpKey = nil
+local bindingKey = false
+local currentPage = "Main"
+local isMinimized = false
 
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
+local Backgrounds = {
+    "rbxassetid://90631990302263", "rbxassetid://109619268613730", "rbxassetid://90453834580322",
+    "rbxassetid://82173577293417", "rbxassetid://88369503310562", "rbxassetid://80708025126373",
+    "rbxassetid://111949903851987", "rbxassetid://135181794444219"
+}
 
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
+local THEMES = {}
+for i, id in ipairs(Backgrounds) do
+    table.insert(THEMES, { name = "Theme " .. i, image = id })
+end
+local DEFAULT_BG = THEMES[1].image
 
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
+-- [ AYARLARI KAYDETME VE YÜKLEME SİSTEMİ ] --
+local SETTINGS_FILE = "ViperXNebula_Settings.json"
 
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
+local function saveSettings()
+    if not writefile then return end
+    local data = {
+        Scale = state.Scale,
+        Opacity = state.Opacity,
+        Keybind = antiTpKey and antiTpKey.Name or "NONE",
+        Background = DEFAULT_BG
+    }
+    pcall(function() writefile(SETTINGS_FILE, HttpService:JSONEncode(data)) end)
+end
 
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
+local function loadSettings()
+    if not readfile or not isfile or not isfile(SETTINGS_FILE) then return end
+    pcall(function()
+        local data = HttpService:JSONDecode(readfile(SETTINGS_FILE))
+        if data.Scale then state.Scale = data.Scale end
+        if data.Opacity then state.Opacity = data.Opacity end
+        if data.Keybind then 
+            if data.Keybind == "NONE" then
+                antiTpKey = nil
+            else
+                pcall(function() antiTpKey = Enum.KeyCode[data.Keybind] end)
+            end
+        end
+        if data.Background then DEFAULT_BG = data.Background end
+    end)
+end
 
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
+loadSettings() 
 
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
+local VS_FAKE = 16
+local spoofedVelocity = Vector3.zero
 
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
+local function isSpoofTarget(self)
+	if typeof(self) ~= "Instance" then return false end
+	if not self:IsA("BasePart") then return false end
+	local char = LocalPlayer.Character
+	if not char then return false end
+	return self == char:FindFirstChild("HumanoidRootPart") or self:IsDescendantOf(char)
+end
 
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
+pcall(function()
+	if not (getrawmetatable and setreadonly and newcclosure and checkcaller) then return end
+	local mt = getrawmetatable(game)
+	setreadonly(mt, false)
+	local oldIndex = mt.__index
+	local oldNewIndex = mt.__newindex
 
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
+	mt.__index = newcclosure(function(self, key)
+		if state.AntiBat and not checkcaller() and (key == "AssemblyLinearVelocity" or key == "Velocity") then
+			if isSpoofTarget(self) then
+				return spoofedVelocity
+			end
+		end
+		return oldIndex(self, key)
+	end)
 
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
+	mt.__newindex = newcclosure(function(self, key, value)
+		if state.AntiBat and not checkcaller() and (key == "AssemblyLinearVelocity" or key == "Velocity") then
+			if isSpoofTarget(self) then
+				return
+			end
+		end
+		return oldNewIndex(self, key, value)
+	end)
+	setreadonly(mt, true)
+end)
 
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
+local function updateFakeVelocity()
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not char or not hum or not root or hum.Health <= 0 then return end
+	local dir = hum.MoveDirection
+	if dir.Magnitude > 0.05 then
+		local unit = dir.Unit
+		spoofedVelocity = Vector3.new(unit.X * VS_FAKE, root.AssemblyLinearVelocity.Y, unit.Z * VS_FAKE)
+	else
+		spoofedVelocity = Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
+	end
+end
+track((RunService.PreSimulation or RunService.Stepped):Connect(updateFakeVelocity))
 
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
+local Speed = 15000
+local Angle = 0
+local Direction = 1
 
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
+local currentCarryWeld = nil
+local currentBrainrotPart = nil
+local currentCharacterPart = nil
 
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
+local function getSafeY(root)
+	local y = root.AssemblyLinearVelocity.Y
+	if not UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+		if y > 20 then
+			y = 0
+		elseif y < -45 then
+			y = -45
+		end
+	end
+	return y
+end
 
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
+local function antiBatStep()
+	if not state.AntiBat then return end
+	local char = LocalPlayer.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not root or not root.Parent or not hum or hum.Health <= 0 then return end
 
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
+	local origVel = root.AssemblyLinearVelocity
+	local origXZ = Vector3.new(origVel.X, 0, origVel.Z)
+	local safeY = getSafeY(root)
 
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
+	Speed = Speed + (90 * Direction)
+	if Speed >= 22000 then
+		Speed = 22000
+		Direction = -1
+	elseif Speed <= 12000 then
+		Speed = 12000
+		Direction = 1
+	end
 
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
+	Angle = Angle + (math.random() * 0.7 + 0.35)
+	local radius = Speed + math.random(-4500, 4500)
+	local newX = math.cos(Angle) * radius
+	local newZ = math.sin(Angle) * radius
 
-   END OF TERMS AND CONDITIONS
+	root.AssemblyLinearVelocity = Vector3.new(newX, safeY, newZ)
+	pcall(function() root.Velocity = Vector3.new(newX, safeY, newZ) end)
+	root.AssemblyAngularVelocity = Vector3.zero
 
-   APPENDIX: How to apply the Apache License to your work.
+	RunService.RenderStepped:Wait()
 
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
+	if root and root.Parent then
+		local curY = root.AssemblyLinearVelocity.Y
+		root.AssemblyLinearVelocity = Vector3.new(origXZ.X, curY, origXZ.Z)
+		pcall(function() root.Velocity = Vector3.new(origXZ.X, curY, origXZ.Z) end)
+	end
+end
 
-   Copyright [yyyy] [name of copyright owner]
+local function setupHumanoidProtections(hum)
+	if not hum then return end
+	pcall(function()
+		hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, false)
+	end)
+end
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+local function isRealBrainrot(child)
+	if not child or not child.Parent then return false end
+	local n = child.Name:lower()
+	if child:IsA("Model") or child:IsA("Folder") then
+		if n:find("brainrot") or n:find("stolen") or n:find("carry") or n:find("animal") or child:GetAttribute("Brainrot") == true then
+			return true
+		end
+	elseif child:IsA("BasePart") then
+		if (n:find("brainrot") or n:find("stolen") or child:GetAttribute("Brainrot") == true) and not n:find("root") and not n:find("torso") and not n:find("arm") and not n:find("leg") and not n:find("head") then
+			return true
+		end
+	elseif child:IsA("Tool") then
+		if (n:find("brainrot") or child:GetAttribute("Brainrot") == true) and not (n:find("bat") or n:find("slap") or n:find("punch") or n:find("fist") or n:find("medusa") or n:find("gun") or n:find("sword") or n:find("potion") or n:find("speed") or n:find("taser") or n:find("shield") or n:find("bomb") or n:find("knife")) then
+			return true
+		end
+	end
+	return false
+end
 
-       http://www.apache.org/licenses/LICENSE-2.0
+local function preserveCarryWeld(char)
+	if not char then return end
+	local targetBrainrot = nil
+	for _, child in ipairs(char:GetChildren()) do
+		if isRealBrainrot(child) then
+			targetBrainrot = child
+			break
+		end
+	end
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+	if not targetBrainrot then
+		currentBrainrotPart = nil
+		currentCharacterPart = nil
+		if currentCarryWeld and currentCarryWeld.Name == "ViperCarryProtectionWeld" then
+			pcall(function() currentCarryWeld:Destroy() end)
+		end
+		currentCarryWeld = nil
+		return
+	end
+
+	local rootTarget = targetBrainrot:IsA("Tool") and (targetBrainrot:FindFirstChild("Handle") or targetBrainrot:FindFirstChildWhichIsA("BasePart")) or (targetBrainrot:FindFirstChild("RootPart") or targetBrainrot:FindFirstChild("HumanoidRootPart") or targetBrainrot:FindFirstChildWhichIsA("BasePart"))
+	if not rootTarget then return end
+
+	currentBrainrotPart = rootTarget
+	currentCharacterPart = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+	if not currentCharacterPart then return end
+
+	for _, p in ipairs(targetBrainrot:GetDescendants()) do
+		if p:IsA("BasePart") then
+			if p.CanCollide then p.CanCollide = false end
+			if not p.Massless then p.Massless = true end
+			p.CustomPhysicalProperties = PhysicalProperties.new(0.001, 0, 0, 0, 0)
+		end
+	end
+
+	local hasActiveWeld = false
+	for _, w in ipairs(char:GetDescendants()) do
+		if w:IsA("WeldConstraint") or w:IsA("ManualWeld") or w:IsA("Weld") or w:IsA("Motor6D") then
+			if (w.Part0 == currentCharacterPart and w.Part1 == currentBrainrotPart) or (w.Part1 == currentCharacterPart and w.Part0 == currentBrainrotPart) then
+				if not w.Enabled then w.Enabled = true end
+				hasActiveWeld = true
+				currentCarryWeld = w
+				break
+			end
+		end
+	end
+
+	if not hasActiveWeld then
+		local newWeld = Instance.new("WeldConstraint")
+		newWeld.Name = "ViperCarryProtectionWeld"
+		newWeld.Part0 = currentCharacterPart
+		newWeld.Part1 = currentBrainrotPart
+		newWeld.Parent = currentCharacterPart
+		currentCarryWeld = newWeld
+	end
+end
+
+local function antiRagdollStep()
+	if not state.AntiBat then return end
+	local char = LocalPlayer.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if hum and hum.Health > 0 then
+		local st = hum:GetState()
+		if st == Enum.HumanoidStateType.Physics
+			or st == Enum.HumanoidStateType.Ragdoll
+			or st == Enum.HumanoidStateType.FallingDown
+			or st == Enum.HumanoidStateType.PlatformStanding
+			or hum.PlatformStand
+			or hum.Sit then
+			hum.PlatformStand = false
+			hum.Sit = false
+			hum:ChangeState(Enum.HumanoidStateType.Running)
+			workspace.CurrentCamera.CameraSubject = hum
+			pcall(function()
+				local pm = LocalPlayer.PlayerScripts:FindFirstChild("PlayerModule")
+				if pm then require(pm:FindFirstChild("ControlModule")):Enable() end
+			end)
+			if root then
+				root.AssemblyAngularVelocity = Vector3.zero
+			end
+		end
+	end
+
+	for _, obj in ipairs(char:GetDescendants()) do
+		if obj:IsA("BallSocketConstraint") or (obj:IsA("Attachment") and obj.Name:find("RagdollAttachment")) then
+			pcall(function() obj:Destroy() end)
+		elseif obj:IsA("Motor6D") and not obj.Enabled then
+			obj.Enabled = true
+		end
+	end
+
+	pcall(function() preserveCarryWeld(char) end)
+end
+
+local function hookCharacter(char)
+	if not char then return end
+	local hum = char:WaitForChild("Humanoid", 5)
+	if hum then
+		setupHumanoidProtections(hum)
+		track(hum.StateChanged:Connect(function(oldState, newState)
+			if state.AntiBat then
+				if newState == Enum.HumanoidStateType.Physics
+					or newState == Enum.HumanoidStateType.Ragdoll
+					or newState == Enum.HumanoidStateType.FallingDown
+					or newState == Enum.HumanoidStateType.PlatformStanding then
+					hum.PlatformStand = false
+					hum.Sit = false
+					hum:ChangeState(Enum.HumanoidStateType.Running)
+				end
+			end
+		end))
+		track(hum:GetPropertyChangedSignal("PlatformStand"):Connect(function()
+			if state.AntiBat and hum.PlatformStand then
+				hum.PlatformStand = false
+			end
+		end))
+		track(hum:GetPropertyChangedSignal("Sit"):Connect(function()
+			if state.AntiBat and hum.Sit then
+				hum.Sit = false
+			end
+		end))
+	end
+	track(char.DescendantAdded:Connect(function(descendant)
+		if state.AntiBat then
+			if descendant:IsA("BallSocketConstraint") or (descendant:IsA("Attachment") and descendant.Name:find("RagdollAttachment")) then
+				task.defer(function()
+					pcall(function() descendant:Destroy() end)
+				end)
+			elseif descendant:IsA("Motor6D") and not descendant.Enabled then
+				descendant.Enabled = true
+			end
+		end
+	end))
+end
+
+track(LocalPlayer:GetAttributeChangedSignal("RagdollEndTime"):Connect(function()
+	if state.AntiBat then
+		pcall(function()
+			LocalPlayer:SetAttribute("RagdollEndTime", workspace:GetServerTimeNow())
+		end)
+	end
+end))
+
+track(RunService.Stepped:Connect(function()
+	if not state.AntiBat then return end
+	local char = LocalPlayer.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum and hum.Health > 0 then
+		if hum.PlatformStand then hum.PlatformStand = false end
+		if hum.Sit then hum.Sit = false end
+	end
+end))
+
+if LocalPlayer.Character then
+	hookCharacter(LocalPlayer.Character)
+end
+track(LocalPlayer.CharacterAdded:Connect(function(newChar)
+	currentBrainrotPart = nil
+	currentCarryWeld = nil
+	task.wait(0.2)
+	hookCharacter(newChar)
+end))
+
+local OFF_POS = Vector3.new(0, -1000, 0)
+local ijPlatform = Instance.new("Part")
+ijPlatform.Name = "InfJumpPlatform"
+ijPlatform.Size = Vector3.new(8, 0.5, 8)
+ijPlatform.Anchored = true
+ijPlatform.CanCollide = true
+ijPlatform.Transparency = 1
+ijPlatform.Material = Enum.Material.ForceField
+ijPlatform.Position = OFF_POS
+ijPlatform.Parent = workspace
+
+local function infJumpStep()
+	local char = LocalPlayer.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not (state.InfJump and root and hum) then
+		ijPlatform.Position = OFF_POS
+		return
+	end
+	local jumping = UserInputService:IsKeyDown(Enum.KeyCode.Space)
+		or hum:GetState() == Enum.HumanoidStateType.Jumping
+		or hum.Jump
+	if jumping then
+		ijPlatform.Position = root.Position - Vector3.new(0, 3.5, 0)
+		local v = root.AssemblyLinearVelocity
+		if v.Y < INF_JUMP_SPEED then
+			root.AssemblyLinearVelocity = Vector3.new(v.X, INF_JUMP_SPEED, v.Z)
+		end
+	else
+		ijPlatform.Position = OFF_POS
+	end
+end
+
+local refreshToggles 
+
+track(RunService.Heartbeat:Connect(antiBatStep))
+track(RunService.Heartbeat:Connect(antiRagdollStep))
+track(RunService.Heartbeat:Connect(infJumpStep))
+
+local VIPER = Color3.fromRGB(0, 255, 128)
+local NEBULA = Color3.fromRGB(180, 60, 255)
+local NEBULA_DEEP = Color3.fromRGB(80, 20, 140)
+local NEBULA_NAVY = Color3.fromRGB(15, 15, 20)
+local HEADER_BG = Color3.fromRGB(10, 10, 15)
+local BTN = Color3.fromRGB(20, 20, 30)
+local WHITE = Color3.fromRGB(240, 245, 255)
+local FONT_HEAVY = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy, Enum.FontStyle.Normal)
+
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do
+		o[k] = v
+	end
+	if parent then o.Parent = parent end
+	return o
+end
+
+local function corner(parent, r)
+	return new("UICorner", { CornerRadius = UDim.new(0, r or 10) }, parent)
+end
+
+local function stroke(parent, color, thick)
+	return new("UIStroke", {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = color or Color3.fromRGB(50, 50, 80),
+		Thickness = thick or 1,
+	}, parent)
+end
+
+local function makeButton(parent, text, pos, size)
+	local b = new("TextButton", {
+		BackgroundColor3 = BTN,
+		BackgroundTransparency = 0.55,
+		BorderSizePixel = 0,
+		Position = pos,
+		Size = size,
+		ZIndex = 4,
+		AutoButtonColor = false,
+		FontFace = FONT_HEAVY,
+		Text = text,
+		TextColor3 = WHITE,
+		TextSize = 13,
+	}, parent)
+	corner(b, 10)
+	stroke(b, Color3.fromRGB(60, 60, 90), 1)
+	return b
+end
+
+local Gui = new("ScreenGui", {
+	Name = "ViperXNebulaAntiBatUI",
+	ResetOnSpawn = false,
+	DisplayOrder = 2147483647,
+	IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, PlayerGui)
+
+local Panel = new("Frame", {
+	Name = "AntiBatPanel",
+	Active = true,
+	BackgroundColor3 = NEBULA_NAVY,
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	Position = UDim2.new(0, 772, 0, 339),
+	Size = UDim2.new(0, 250, 0, 190), -- Yükseklik hatası giderildi. Keybind artık kesilmeyecek.
+}, Gui)
+corner(Panel, 14)
+
+local PanelScale = new("UIScale", { 
+    Scale = state.Scale / 100 
+}, Panel)
+
+local BgImage = new("ImageLabel", {
+	Name = "BackgroundImage",
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 1, 0),
+	ZIndex = 0,
+	Image = DEFAULT_BG,
+	ImageTransparency = 1 - (state.Opacity / 100),
+	ScaleType = Enum.ScaleType.Crop,
+}, Panel)
+corner(BgImage, 14)
+
+local Shade = new("Frame", {
+	Name = "BackgroundShade",
+	BackgroundColor3 = NEBULA_NAVY,
+	BackgroundTransparency = 0.32 + (state.Opacity / 100) * 0.68,
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 1, 0),
+}, Panel)
+corner(Shade, 14)
+
+local Header = new("Frame", {
+	Name = "Header",
+	Active = true,
+	BackgroundColor3 = HEADER_BG,
+	BackgroundTransparency = 0.6,
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 0, 36),
+	ZIndex = 3,
+}, Panel)
+corner(Header, 14)
+
+local TitleContainer = new("Frame", {
+    BackgroundTransparency = 1,
+    Position = UDim2.new(0, 14, 0, 0),
+    Size = UDim2.new(1, -75, 1, 0),
+    ZIndex = 4,
+}, Header)
+
+new("UIListLayout", {
+    FillDirection = Enum.FillDirection.Horizontal,
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+}, TitleContainer)
+
+new("TextLabel", {
+    BackgroundTransparency = 1,
+    AutomaticSize = Enum.AutomaticSize.XY,
+    FontFace = FONT_HEAVY,
+    Text = "VIPER ",
+    TextColor3 = VIPER,
+    TextSize = 13,
+}, TitleContainer)
+
+local XLabel = new("TextLabel", {
+    BackgroundTransparency = 1,
+    AutomaticSize = Enum.AutomaticSize.XY,
+    FontFace = FONT_HEAVY,
+    Text = "X",
+    TextColor3 = Color3.fromRGB(255,255,255),
+    TextSize = 13,
+}, TitleContainer)
+
+new("UIGradient", {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0.00, VIPER),
+        ColorSequenceKeypoint.new(0.49, VIPER),
+        ColorSequenceKeypoint.new(0.51, NEBULA), 
+        ColorSequenceKeypoint.new(1.00, NEBULA),
+    }),
+}, XLabel)
+
+new("TextLabel", {
+    BackgroundTransparency = 1,
+    AutomaticSize = Enum.AutomaticSize.XY,
+    FontFace = FONT_HEAVY,
+    Text = " NEBULA",
+    TextColor3 = NEBULA,
+    TextSize = 13,
+}, TitleContainer)
+
+local MinBtn = new("TextButton", {
+	Name = "MinimizeButton",
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Position = UDim2.new(1, -54, 0, 6),
+	Size = UDim2.new(0, 24, 0, 24),
+	ZIndex = 6,
+	AutoButtonColor = false,
+	Text = "-",
+	TextColor3 = WHITE,
+	TextSize = 22,
+	FontFace = FONT_HEAVY,
+}, Header)
+
+local GearBtn = new("TextButton", {
+	Name = "SizeSettingsButton",
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Position = UDim2.new(1, -30, 0, 6),
+	Size = UDim2.new(0, 24, 0, 24),
+	ZIndex = 6,
+	AutoButtonColor = false,
+	Text = "⚙",
+	TextColor3 = WHITE,
+	TextSize = 20,
+	FontFace = FONT_HEAVY,
+}, Header)
+
+track(RunService.RenderStepped:Connect(function(dt)
+    GearBtn.Rotation = GearBtn.Rotation + (50 * dt)
+end))
+
+-- MAIN PAGE
+local MainPage = new("Frame", {
+	Name = "MainPage",
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Position = UDim2.new(0, 0, 0, 36),
+	Size = UDim2.new(1, 0, 1, -36),
+	ZIndex = 3,
+}, Panel)
+
+local AntiBatBtn = makeButton(MainPage, "Anti Bat • OFF", UDim2.new(0, 12, 0, 16), UDim2.new(1, -24, 0, 36))
+local InfJumpBtn = makeButton(MainPage, "Infinite Jump • OFF", UDim2.new(0, 12, 0, 60), UDim2.new(1, -24, 0, 36))
+
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 18, 0, 110),
+	Size = UDim2.new(0, 74, 0, 24),
+	ZIndex = 4,
+	FontFace = FONT_HEAVY,
+	Text = "KEYBIND",
+	TextColor3 = WHITE,
+	TextSize = 11,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, MainPage)
+
+local KeyBtn = new("TextButton", {
+	BackgroundColor3 = BTN,
+	BackgroundTransparency = 0.55,
+	BorderSizePixel = 0,
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -12, 0, 106),
+	Size = UDim2.new(0, 80, 0, 32),
+	ZIndex = 4,
+	AutoButtonColor = false,
+	FontFace = FONT_HEAVY,
+	Text = "NONE",
+	TextColor3 = WHITE,
+	TextSize = 11,
+}, MainPage)
+corner(KeyBtn, 8)
+stroke(KeyBtn, Color3.fromRGB(60, 60, 90), 1)
+
+-- SETTINGS PAGE
+local SettingsPage = new("Frame", {
+	Name = "SettingsPage",
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Position = UDim2.new(0, 12, 0, 40),
+	Size = UDim2.new(1, -24, 1, -40),
+	Visible = false,
+	ZIndex = 5,
+}, Panel)
+
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 0, 0, 0),
+	Size = UDim2.new(1, 0, 0, 22),
+	ZIndex = 6,
+	FontFace = FONT_HEAVY,
+	Text = "UI SIZE",
+	TextColor3 = WHITE,
+	TextSize = 11,
+}, SettingsPage)
+
+local SizeStepperFrame = new("Frame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 0, 0, 20),
+	Size = UDim2.new(1, 0, 0, 28),
+	ZIndex = 7,
+}, SettingsPage)
+
+local SizeMinusBtn = makeButton(SizeStepperFrame, "-", UDim2.new(0, 0, 0, 0), UDim2.new(0, 32, 1, 0))
+SizeMinusBtn.TextSize = 18
+
+local ScaleVal = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 40, 0, 0),
+	Size = UDim2.new(1, -80, 1, 0),
+	ZIndex = 8,
+	FontFace = FONT_HEAVY,
+	Text = state.Scale .. "%",
+	TextColor3 = WHITE,
+	TextSize = 12,
+}, SizeStepperFrame)
+
+local SizePlusBtn = makeButton(SizeStepperFrame, "+", UDim2.new(1, -32, 0, 0), UDim2.new(0, 32, 1, 0))
+SizePlusBtn.TextSize = 16
+
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 0, 0, 50),
+	Size = UDim2.new(1, 0, 0, 22),
+	ZIndex = 6,
+	FontFace = FONT_HEAVY,
+	Text = "BG OPACITY",
+	TextColor3 = WHITE,
+	TextSize = 11,
+}, SettingsPage)
+
+local OpacityStepperFrame = new("Frame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 0, 0, 70),
+	Size = UDim2.new(1, 0, 0, 28),
+	ZIndex = 7,
+}, SettingsPage)
+
+local OpacityMinusBtn = makeButton(OpacityStepperFrame, "-", UDim2.new(0, 0, 0, 0), UDim2.new(0, 32, 1, 0))
+OpacityMinusBtn.TextSize = 18
+
+local OpacityVal = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 40, 0, 0),
+	Size = UDim2.new(1, -80, 1, 0),
+	ZIndex = 8,
+	FontFace = FONT_HEAVY,
+	Text = state.Opacity .. "%",
+	TextColor3 = WHITE,
+	TextSize = 12,
+}, OpacityStepperFrame)
+
+local OpacityPlusBtn = makeButton(OpacityStepperFrame, "+", UDim2.new(1, -32, 0, 0), UDim2.new(0, 32, 1, 0))
+OpacityPlusBtn.TextSize = 16
+
+local ChangeThemeBtn = makeButton(SettingsPage, "CHANGE THEME", UDim2.new(0, 0, 0, 106), UDim2.new(1, 0, 0, 28))
+
+local function createDiscordRow(parent, yPos, title, link)
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, yPos),
+		Size = UDim2.new(1, -60, 0, 24),
+		ZIndex = 8,
+		FontFace = FONT_HEAVY,
+		Text = title,
+		TextColor3 = WHITE,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, parent)
+
+	local copyBtn = makeButton(parent, "COPY", UDim2.new(1, -50, 0, yPos), UDim2.new(0, 50, 0, 24))
+	copyBtn.TextSize = 10
+	copyBtn.MouseButton1Click:Connect(function()
+		if setclipboard then
+			setclipboard(link)
+			copyBtn.Text = "COPIED"
+			task.delay(1.5, function() copyBtn.Text = "COPY" end)
+		end
+	end)
+end
+
+createDiscordRow(SettingsPage, 142, "VIPER DISCORD", "https://discord.gg/ZvGZNsHRTn")
+createDiscordRow(SettingsPage, 172, "NEBULA DISCORD", "https://discord.gg/FHXytRrzAq")
+
+-- THEMES PAGE
+local ThemePage = new("Frame", {
+    Name = "ThemePage",
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    Position = UDim2.new(0, 12, 0, 40),
+    Size = UDim2.new(1, -24, 1, -40),
+    Visible = false,
+    ZIndex = 5,
+}, Panel)
+
+local ThemeBackBtn = makeButton(ThemePage, "BACK TO SETTINGS", UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 28))
+
+local ThemeScroll = new("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Position = UDim2.new(0, 0, 0, 36),
+	Size = UDim2.new(1, 0, 1, -36),
+	ZIndex = 52,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	ScrollBarImageColor3 = VIPER, 
+	ScrollBarThickness = 4,
+}, ThemePage)
+
+new("UIListLayout", {
+	Padding = UDim.new(0, 10),
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, ThemeScroll)
+new("UIPadding", { PaddingBottom = UDim.new(0, 10) }, ThemeScroll)
+
+local function setScale(pct)
+	pct = math.clamp(math.round(pct), SLIDER_MIN, SLIDER_MAX)
+	state.Scale = pct
+	PanelScale.Scale = pct / 100
+	ScaleVal.Text = pct .. "%"
+    saveSettings()
+end
+
+SizeMinusBtn.MouseButton1Click:Connect(function() setScale(state.Scale - 5) end)
+SizePlusBtn.MouseButton1Click:Connect(function() setScale(state.Scale + 5) end)
+
+local function setOpacity(pct)
+	pct = math.clamp(math.round(pct), 0, 100)
+	state.Opacity = pct
+	OpacityVal.Text = pct .. "%"
+	BgImage.ImageTransparency = 1 - (pct / 100)
+    Shade.BackgroundTransparency = 0.32 + (pct / 100) * 0.68
+    saveSettings()
+end
+
+OpacityMinusBtn.MouseButton1Click:Connect(function() setOpacity(state.Opacity - 5) end)
+OpacityPlusBtn.MouseButton1Click:Connect(function() setOpacity(state.Opacity + 5) end)
+
+local function refreshPages()
+    if isMinimized then return end
+    
+	MainPage.Visible = (currentPage == "Main")
+	SettingsPage.Visible = (currentPage == "Settings")
+    ThemePage.Visible = (currentPage == "Themes")
+    
+	if currentPage == "Main" then
+		GearBtn.TextColor3 = WHITE
+        TweenService:Create(Panel, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 250, 0, 190)}):Play()
+	elseif currentPage == "Settings" then
+		GearBtn.TextColor3 = VIPER
+        TweenService:Create(Panel, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 250, 0, 246)}):Play()
+    elseif currentPage == "Themes" then
+        GearBtn.TextColor3 = VIPER
+        TweenService:Create(Panel, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 250, 0, 246)}):Play()
+    end
+end
+
+MinBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MinBtn.TextColor3 = VIPER
+        TweenService:Create(Panel, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 250, 0, 36)}):Play()
+    else
+        MinBtn.TextColor3 = WHITE
+        refreshPages()
+    end
+end)
+
+GearBtn.MouseButton1Click:Connect(function()
+    if isMinimized then
+        isMinimized = false
+        MinBtn.TextColor3 = WHITE
+    end
+    if currentPage == "Main" then
+        currentPage = "Settings"
+    else
+        currentPage = "Main"
+    end
+	refreshPages()
+end)
+
+ChangeThemeBtn.MouseButton1Click:Connect(function()
+    currentPage = "Themes"
+    refreshPages()
+end)
+
+ThemeBackBtn.MouseButton1Click:Connect(function()
+    currentPage = "Settings"
+    refreshPages()
+end)
+
+local function setTheme(t)
+    currentPage = "Settings"
+    refreshPages()
+	local cloneBg = BgImage:Clone()
+	cloneBg.ZIndex = BgImage.ZIndex + 1
+	cloneBg.Image = t.image
+	cloneBg.ImageTransparency = 1
+	cloneBg.Parent = Panel
+	
+	local targetTransparency = 1 - (state.Opacity / 100)
+	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Linear)
+	local fadeTween = TweenService:Create(cloneBg, tweenInfo, { ImageTransparency = targetTransparency })
+	fadeTween:Play()
+	
+	fadeTween.Completed:Connect(function()
+		BgImage.Image = t.image
+		BgImage.ImageTransparency = targetTransparency
+        DEFAULT_BG = t.image
+        saveSettings()
+		cloneBg:Destroy()
+	end)
+end
+
+for i, t in ipairs(THEMES) do
+	local card = new("TextButton", {
+		Name = t.name .. "ThemeCard",
+		BackgroundColor3 = BTN,
+		BorderSizePixel = 0,
+		LayoutOrder = i,
+		Size = UDim2.new(1, -12, 0, 48),
+		ZIndex = 53,
+		AutoButtonColor = false,
+		Text = "",
+		ClipsDescendants = true,
+	}, ThemeScroll)
+	corner(card, 8)
+
+	local cardBg = new("ImageLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 1, 0),
+		ZIndex = 54,
+		Image = t.image,
+		ImageTransparency = 0, 
+		ScaleType = Enum.ScaleType.Crop,
+	}, card)
+	corner(cardBg, 8)
+
+	card.MouseButton1Click:Connect(function()
+		setTheme(t)
+	end)
+end
+
+local function refreshToggle(btn, baseText, on)
+	btn.Text = baseText .. " • " .. (on and "ON" or "OFF")
+	btn.TextColor3 = on and WHITE or Color3.fromRGB(200, 200, 200)
+	local s = btn:FindFirstChildOfClass("UIStroke")
+	if s then
+		s.Color = on and VIPER or Color3.fromRGB(60, 60, 90)
+	end
+end
+
+refreshToggles = function()
+	refreshToggle(AntiBatBtn, "Anti Bat", state.AntiBat)
+	refreshToggle(InfJumpBtn, "Infinite Jump", state.InfJump)
+	KeyBtn.Text = bindingKey and "..." or (antiTpKey and antiTpKey.Name or "NONE")
+end
+
+AntiBatBtn.MouseButton1Click:Connect(function()
+	state.AntiBat = not state.AntiBat
+	refreshToggles()
+end)
+InfJumpBtn.MouseButton1Click:Connect(function()
+	state.InfJump = not state.InfJump
+	refreshToggles()
+end)
+
+KeyBtn.MouseButton1Click:Connect(function()
+	if bindingKey then return end
+	bindingKey = true
+	refreshToggles()
+end)
+
+track(UserInputService.InputBegan:Connect(function(input, gp)
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	if bindingKey then
+        if input.KeyCode == Enum.KeyCode.Backspace or input.KeyCode == Enum.KeyCode.Escape then
+            antiTpKey = nil 
+        elseif input.KeyCode ~= Enum.KeyCode.Unknown then
+			antiTpKey = input.KeyCode
+		end
+		bindingKey = false
+        saveSettings()
+		refreshToggles()
+		return
+	end
+	if not gp and antiTpKey and input.KeyCode == antiTpKey then
+		state.AntiBat = not state.AntiBat
+		refreshToggles()
+	end
+end))
+
+local dragging = false
+local dragStart, startPos
+
+Header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = Panel.Position
+	end
+end)
+
+track(UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+	if dragging then
+		local d = input.Position - dragStart
+		Panel.Position = UDim2.new(0, startPos.X.Offset + d.X, 0, startPos.Y.Offset + d.Y)
+	end
+end))
+
+track(UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end))
+
+setScale(state.Scale)
+setOpacity(state.Opacity)
+refreshPages()
+refreshToggles()
+
+runtime.destroy = function()
+	runtime.alive = false
+	for _, c in ipairs(conns) do
+		pcall(function() c:Disconnect() end)
+	end
+	table.clear(conns)
+	pcall(function() ijPlatform:Destroy() end)
+	pcall(function() Gui:Destroy() end)
+	if env.__VIPER_NEBULA_ANTIBAT_RUNTIME == runtime then
+		env.__VIPER_NEBULA_ANTIBAT_RUNTIME = nil
+	end
+end
+
+return Gui
